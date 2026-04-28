@@ -1,8 +1,5 @@
-interface Task {
+export type Task = {
   id: number;
   title: string;
   completed: boolean;
-}
-
-export { Task };
-
+};

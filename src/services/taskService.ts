@@ -27,3 +27,20 @@ export const createTask = (title: string): Task => {
     completed: false,
   };
 };
+
+export const updateTask = async (id: number, title: string): Promise<void> => {
+  const response = await fetch(
+    `https://jsonplaceholder.typicode.com/todos/${id}`,
+    {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ title }),
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error("Failed to update task");
+  }
+};
