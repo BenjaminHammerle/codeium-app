@@ -44,3 +44,14 @@ export const updateTask = async (id: number, title: string): Promise<void> => {
     throw new Error("Failed to update task");
   }
 };
+
+export const deleteTask = async (id: number) => {
+  try {
+    await fetch(`https://jsonplaceholder.typicode.com/todos/${id}`, {
+      method: "DELETE",
+    });
+    return true;
+  } catch (error) {
+    return false;
+  }
+};

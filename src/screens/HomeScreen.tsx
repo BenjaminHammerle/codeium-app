@@ -5,10 +5,16 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  TouchableOpacity,
   View,
 } from "react-native";
 import { LoginService } from "../services/authService";
-import { createTask, loadTasks, updateTask } from "../services/taskService";
+import {
+  createTask,
+  deleteTask,
+  loadTasks,
+  updateTask,
+} from "../services/taskService";
 import { Task } from "../types/task";
 
 interface HomeScreenProps {
@@ -125,11 +131,37 @@ const HomeScreen = ({ onLogout }: HomeScreenProps) => {
               {item.completed ? "Done" : "Open"}
             </Text>
             <Button title="Edit" onPress={() => startEditing(item)} />
+            <TouchableOpacity onPress={() => handleDeleteTask(item.id)}>
+              <Text style={styles.taskDeleteButton}>Delete</Text>
+            </TouchableOpacity>
           </>
         )}
       </View>
     );
   };
+
+  const handleDeleteTask = async (taskId: number) => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      await deleteTask(taskId);
+      setTasks(tasks.filter((task) => task.id !== taskId));
+      setSuccessMessage("Task deleted successfully");
+    } catch (error) {
+      setError(error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  useEffect(() => {
+    if (successMessage) {
+      const timeout = setTimeout(() => setSuccessMessage(null), 2000);
+      return () => clearTimeout(timeout);
+    }
+  }, [successMessage]);
 
   return (
     <View style={styles.container}>
@@ -169,6 +201,7 @@ const HomeScreen = ({ onLogout }: HomeScreenProps) => {
         contentContainerStyle={styles.taskListContent}
       />
 
+      <Text style={styles.successMessage}>{successMessage}</Text>
       <View style={styles.logoutContainer}>
         <Button title="Logout" onPress={handleLogout} />
       </View>
@@ -238,6 +271,13 @@ const styles = StyleSheet.create({
   },
   logoutContainer: {
     marginTop: 12,
+  },
+  taskDeleteButton: {
+    color: "red",
+    fontSize: 16,
+    marginTop: 8,
+    textDecorationLine: "underline",
+    cursor: "pointer",
   },
 });
 
