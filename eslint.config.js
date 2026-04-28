@@ -11,6 +11,7 @@ module.exports = defineConfig([
       sonarjs,
     },
     rules: {
+      ...sonarjs.configs.recommended.rules,
       // Zyklomatische Komplexität
       complexity: ["warn", 10],
 

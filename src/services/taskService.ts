@@ -1,51 +1,29 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import { Task } from "../types/task";
 
-interface Task {
-  id: number;
-  title: string;
-  completed: boolean;
-}
+export const loadTasks = async (): Promise<Task[]> => {
+  const response = await fetch("https://jsonplaceholder.typicode.com/todos");
 
-interface TaskResponse {
-  userId: number;
-  id: number;
-  title: string;
-  completed: boolean;
-}
-
-const API_URL = "https://jsonplaceholder.typicode.com/todos";
-
-export async function getTasks(): Promise<Task[]> {
-  try {
-    const response = await fetch(`${API_URL}?_limit=10`);
-    const tasks = await response.json();
-    return tasks.map((task: TaskResponse) => ({
-      id: task.id,
-      title: task.title,
-      completed: task.completed,
-    }));
-  } catch (error) {
+  if (!response.ok) {
     throw new Error("Failed to fetch tasks");
   }
-}
 
-export async function saveTasks(tasks: Task[]) {
-  try {
-    const serializedTasks = JSON.stringify(tasks);
-    await AsyncStorage.setItem("tasks", serializedTasks);
-  } catch (error) {
-    throw new Error("Failed to save tasks");
-  }
-}
+  const data = await response.json();
 
-export async function loadTasks(): Promise<Task[]> {
-  try {
-    const serializedTasks = await AsyncStorage.getItem("tasks");
-    if (serializedTasks !== null) {
-      return JSON.parse(serializedTasks);
-    }
+  if (!Array.isArray(data)) {
     return [];
-  } catch (error) {
-    throw new Error("Failed to load tasks");
   }
-}
+
+  return data.slice(0, 10).map((task) => ({
+    id: Number(task.id),
+    title: String(task.title),
+    completed: Boolean(task.completed),
+  }));
+};
+
+export const createTask = (title: string): Task => {
+  return {
+    id: Date.now(),
+    title,
+    completed: false,
+  };
+};
