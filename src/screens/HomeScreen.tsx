@@ -14,7 +14,8 @@ import {
   createTask,
   deleteTask,
   loadTasks,
-  updateTask,
+  saveTasksToCache,
+  updateTask
 } from "../services/taskService";
 import { Task } from "../types/task";
 
@@ -33,6 +34,7 @@ const HomeScreen = ({ onLogout }: HomeScreenProps) => {
 
   const [filter, setFilter] = useState<string | null>(null);
   const [sort, setSort] = useState<string | null>(null);
+  const [isOffline, setIsOffline] = useState(false); // new state
 
   const handleFilter = (filter: string | null) => {
     setFilter(filter);
@@ -51,14 +53,10 @@ const HomeScreen = ({ onLogout }: HomeScreenProps) => {
     setError(null);
 
     try {
-      const loadedTasks = await loadTasks();
-      setTasks(loadedTasks);
-    } catch (requestError) {
-      setError(
-        requestError instanceof Error
-          ? requestError.message
-          : "Failed to load tasks",
-      );
+      setTasks(await loadTasks());
+    } catch (error) {
+      console.error("Error loading tasks", error);
+      setError("Error loading tasks.");
     } finally {
       setLoading(false);
     }
@@ -191,9 +189,10 @@ const HomeScreen = ({ onLogout }: HomeScreenProps) => {
     try {
       await deleteTask(taskId);
       setTasks(tasks.filter((task) => task.id !== taskId));
-      setSuccessMessage("Task deleted successfully");
+      await saveTasksToCache(tasks);
     } catch (error) {
-      setError(error.message);
+      console.error("Error deleting task", error);
+      setError("Error deleting task.");
     } finally {
       setLoading(false);
     }
@@ -256,6 +255,12 @@ const HomeScreen = ({ onLogout }: HomeScreenProps) => {
       {validationError ? (
         <Text style={styles.validationError}>{validationError}</Text>
       ) : null}
+
+      {isOffline && (
+        <Text style={{ color: "red" }}>
+          Offline mode – showing cached tasks
+        </Text>
+      )}
 
       {loading ? <Text>Loading tasks...</Text> : null}
 
