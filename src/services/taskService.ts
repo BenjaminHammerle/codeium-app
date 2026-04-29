@@ -43,7 +43,14 @@ export const loadTasksFromCache = async (): Promise<Task[]> => {
   }
 };
 
-const loadTasks = async (): Promise<Task[]> => {
+export const saveTasksToCache = async (tasks: Task[]): Promise<void> => {
+  await AsyncStorage.setItem(
+    TASKS_CACHE_KEY,
+    JSON.stringify(normalizeTasks(tasks)),
+  );
+};
+
+const loadTasksFromApi = async (): Promise<Task[]> => {
   const response = await fetch("https://jsonplaceholder.typicode.com/todos");
 
   if (!response.ok) {
@@ -54,7 +61,7 @@ const loadTasks = async (): Promise<Task[]> => {
   return normalizeTasks(data).slice(0, 10);
 };
 
-export const saveTasksToCache = async (tasks: Task[]): Promise<void> => {
+export const loadTasks = async (): Promise<Task[]> => {
   const cachedTasks = await loadTasksFromCache();
 
   if (cachedTasks.length > 0) {
@@ -65,6 +72,54 @@ export const saveTasksToCache = async (tasks: Task[]): Promise<void> => {
   await saveTasksToCache(apiTasks);
 
   return apiTasks;
+};
+
+export const createTask = (title: string): Task => ({
+  id: Date.now(),
+  title: title.trim(),
+  completed: false,
+});
+
+export const updateTask = async (
+  id: number,
+  title: string,
+): Promise<Task | null> => {
+  try {
+    const response = await fetch(
+      `https://jsonplaceholder.typicode.com/todos/${id}`,
+      {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ title }),
+      },
+    );
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const data = await response.json();
+    return normalizeTask(data);
+  } catch {
+    return null;
+  }
+};
+
+export const deleteTask = async (id: number): Promise<boolean> => {
+  try {
+    const response = await fetch(
+      `https://jsonplaceholder.typicode.com/todos/${id}`,
+      {
+        method: "DELETE",
+      },
+    );
+
+    return response.ok;
+  } catch {
+    return false;
+  }
 };
 
 export const filterTasks = (
@@ -95,55 +150,4 @@ export const sortTasks = (
   }
 
   return tasks;
-};
-
-export const createTask = (title: string): Task => {
-  return {
-    id: Date.now(),
-    title: title.trim(),
-    completed: false,
-  };
-};
-
-export const updateTask = async (
-  id: number,
-  title: string,
-): Promise<Task | null> => {
-  const trimmedTitle = task.title.trim();
-
-  if (trimmedTitle.length < 3) {
-    setValidationError("Edited title must have at least 3 characters.");
-    return;
-  }
-
-  await taskService.updateTask(task.id, trimmedTitle);
-
-  setTasks((currentTasks) =>
-    currentTasks.map((currentTask) =>
-      currentTask.id === task.id
-        ? { ...currentTask, title: trimmedTitle }
-        : currentTask,
-    ),
-  );
-
-  await taskService.saveTasksToCache(tasks);
-
-  setEditingTaskId(null);
-  setEditedTitle("");
-  setValidationError(null);
-};
-
-export const deleteTask = async (id: number): Promise<boolean> => {
-  try {
-    const response = await fetch(
-      `https://jsonplaceholder.typicode.com/todos/${id}`,
-      {
-        method: "DELETE",
-      },
-    );
-
-    return response.ok;
-  } catch {
-    return false;
-  }
 };

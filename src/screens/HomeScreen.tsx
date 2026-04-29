@@ -13,9 +13,11 @@ import { LoginService } from "../services/authService";
 import {
   createTask,
   deleteTask,
+  filterTasks,
   loadTasks,
   saveTasksToCache,
-  updateTask
+  sortTasks,
+  updateTask,
 } from "../services/taskService";
 import { Task } from "../types/task";
 
@@ -23,43 +25,57 @@ interface HomeScreenProps {
   onLogout: () => Promise<void> | void;
 }
 
+type TaskFilter = "all" | "open" | "done";
+type SortOrder = "none" | "asc" | "desc";
+
 const HomeScreen = ({ onLogout }: HomeScreenProps) => {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
   const [title, setTitle] = useState("");
   const [validationError, setValidationError] = useState<string | null>(null);
+
   const [editingTaskId, setEditingTaskId] = useState<number | null>(null);
   const [editedTitle, setEditedTitle] = useState("");
 
-  const [filter, setFilter] = useState<string | null>(null);
-  const [sort, setSort] = useState<string | null>(null);
-  const [isOffline, setIsOffline] = useState(false); // new state
-
-  const handleFilter = (filter: string | null) => {
-    setFilter(filter);
-  };
-
-  const handleSort = (sort: string | null) => {
-    setSort(sort);
-  };
+  const [filter, setFilter] = useState<TaskFilter>("all");
+  const [sortOrder, setSortOrder] = useState<SortOrder>("none");
 
   useEffect(() => {
     fetchTasks();
   }, []);
+
+  useEffect(() => {
+    if (!successMessage) {
+      return;
+    }
+
+    const timeout = setTimeout(() => setSuccessMessage(null), 2000);
+    return () => clearTimeout(timeout);
+  }, [successMessage]);
 
   const fetchTasks = async () => {
     setLoading(true);
     setError(null);
 
     try {
-      setTasks(await loadTasks());
-    } catch (error) {
-      console.error("Error loading tasks", error);
+      const loadedTasks = await loadTasks();
+      setTasks(loadedTasks);
+    } catch (requestError) {
+      console.error("Error loading tasks", requestError);
       setError("Error loading tasks.");
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await fetchTasks();
+    setRefreshing(false);
   };
 
   const handleLogout = async () => {
@@ -67,39 +83,7 @@ const HomeScreen = ({ onLogout }: HomeScreenProps) => {
     await onLogout();
   };
 
-  const [refreshing, setRefreshing] = useState(false);
-
-  const handleRefresh = () => {
-    setRefreshing(true);
-    // Perform your refresh logic here
-    // ...
-    setRefreshing(false);
-  };
-
-  const filteredTasks = filter
-    ? tasks.filter((task) => {
-        if (filter === "open") {
-          return !task.completed;
-        } else if (filter === "completed") {
-          return task.completed;
-        }
-        return true;
-      })
-    : tasks;
-
-  const sortedTasks = sort
-    ? filteredTasks.slice().sort((a, b) => {
-        if (sort === "asc") {
-          return a.title.localeCompare(b.title);
-        } else {
-          return b.title.localeCompare(a.title);
-        }
-      })
-    : filteredTasks;
-
-  const displayedTasks = filter || sort ? sortedTasks : tasks;
-
-  const handleCreateTask = () => {
+  const handleCreateTask = async () => {
     const trimmedTitle = title.trim();
 
     if (trimmedTitle.length < 3) {
@@ -108,9 +92,14 @@ const HomeScreen = ({ onLogout }: HomeScreenProps) => {
     }
 
     const newTask = createTask(trimmedTitle);
-    setTasks((currentTasks) => [newTask, ...currentTasks]);
+    const updatedTasks = [newTask, ...tasks];
+
+    setTasks(updatedTasks);
+    await saveTasksToCache(updatedTasks);
+
     setTitle("");
     setValidationError(null);
+    setSuccessMessage("Task created.");
   };
 
   const startEditing = (task: Task) => {
@@ -135,18 +124,42 @@ const HomeScreen = ({ onLogout }: HomeScreenProps) => {
 
     await updateTask(task.id, trimmedTitle);
 
-    setTasks((currentTasks) =>
-      currentTasks.map((currentTask) =>
-        currentTask.id === task.id
-          ? { ...currentTask, title: trimmedTitle }
-          : currentTask,
-      ),
+    const updatedTasks = tasks.map((currentTask) =>
+      currentTask.id === task.id
+        ? { ...currentTask, title: trimmedTitle }
+        : currentTask,
     );
+
+    setTasks(updatedTasks);
+    await saveTasksToCache(updatedTasks);
 
     setEditingTaskId(null);
     setEditedTitle("");
     setValidationError(null);
+    setSuccessMessage("Task updated.");
   };
+
+  const handleDeleteTask = async (taskId: number) => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      await deleteTask(taskId);
+
+      const updatedTasks = tasks.filter((task) => task.id !== taskId);
+
+      setTasks(updatedTasks);
+      await saveTasksToCache(updatedTasks);
+      setSuccessMessage("Task deleted.");
+    } catch (deleteError) {
+      console.error("Error deleting task", deleteError);
+      setError("Error deleting task.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const displayedTasks = sortTasks(filterTasks(tasks, filter), sortOrder);
 
   const renderTask = ({ item }: { item: Task }) => {
     const isEditing = editingTaskId === item.id;
@@ -172,39 +185,17 @@ const HomeScreen = ({ onLogout }: HomeScreenProps) => {
             <Text style={styles.taskStatus}>
               {item.completed ? "Done" : "Open"}
             </Text>
-            <Button title="Edit" onPress={() => startEditing(item)} />
-            <TouchableOpacity onPress={() => handleDeleteTask(item.id)}>
-              <Text style={styles.taskDeleteButton}>Delete</Text>
-            </TouchableOpacity>
+            <View style={styles.buttonRow}>
+              <Button title="Edit" onPress={() => startEditing(item)} />
+              <TouchableOpacity onPress={() => handleDeleteTask(item.id)}>
+                <Text style={styles.taskDeleteButton}>Delete</Text>
+              </TouchableOpacity>
+            </View>
           </>
         )}
       </View>
     );
   };
-
-  const handleDeleteTask = async (taskId: number) => {
-    setLoading(true);
-    setError(null);
-
-    try {
-      await deleteTask(taskId);
-      setTasks(tasks.filter((task) => task.id !== taskId));
-      await saveTasksToCache(tasks);
-    } catch (error) {
-      console.error("Error deleting task", error);
-      setError("Error deleting task.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
-  useEffect(() => {
-    if (successMessage) {
-      const timeout = setTimeout(() => setSuccessMessage(null), 2000);
-      return () => clearTimeout(timeout);
-    }
-  }, [successMessage]);
 
   return (
     <View style={styles.container}>
@@ -225,30 +216,30 @@ const HomeScreen = ({ onLogout }: HomeScreenProps) => {
       </View>
 
       <View style={styles.filterSortContainer}>
-        <View style={styles.filterSortRow}>
-          <Text style={styles.filterSortLabel}>Filter:</Text>
-          <View style={styles.filterSortButtons}>
-            <TouchableOpacity onPress={() => handleFilter("open")}>
-              <Text style={styles.filterSortButton}>Open</Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => handleFilter("completed")}>
-              <Text style={styles.filterSortButton}>Completed</Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => handleFilter(null)}>
-              <Text style={styles.filterSortButton}>All</Text>
-            </TouchableOpacity>
-          </View>
+        <Text style={styles.filterSortLabel}>Filter</Text>
+        <View style={styles.filterSortButtons}>
+          <TouchableOpacity onPress={() => setFilter("all")}>
+            <Text style={styles.filterSortButton}>All</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => setFilter("open")}>
+            <Text style={styles.filterSortButton}>Open</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => setFilter("done")}>
+            <Text style={styles.filterSortButton}>Done</Text>
+          </TouchableOpacity>
         </View>
-        <View style={styles.filterSortRow}>
-          <Text style={styles.filterSortLabel}>Sort by:</Text>
-          <View style={styles.filterSortButtons}>
-            <TouchableOpacity onPress={() => handleSort("asc")}>
-              <Text style={styles.filterSortButton}>Title (asc)</Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => handleSort("desc")}>
-              <Text style={styles.filterSortButton}>Title (desc)</Text>
-            </TouchableOpacity>
-          </View>
+
+        <Text style={styles.filterSortLabel}>Sort</Text>
+        <View style={styles.filterSortButtons}>
+          <TouchableOpacity onPress={() => setSortOrder("none")}>
+            <Text style={styles.filterSortButton}>None</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => setSortOrder("asc")}>
+            <Text style={styles.filterSortButton}>Title A-Z</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => setSortOrder("desc")}>
+            <Text style={styles.filterSortButton}>Title Z-A</Text>
+          </TouchableOpacity>
         </View>
       </View>
 
@@ -256,17 +247,15 @@ const HomeScreen = ({ onLogout }: HomeScreenProps) => {
         <Text style={styles.validationError}>{validationError}</Text>
       ) : null}
 
-      {isOffline && (
-        <Text style={{ color: "red" }}>
-          Offline mode – showing cached tasks
-        </Text>
-      )}
-
       {loading ? <Text>Loading tasks...</Text> : null}
 
       {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
-      {!loading && !error && tasks.length === 0 ? (
+      {successMessage ? (
+        <Text style={styles.successMessage}>{successMessage}</Text>
+      ) : null}
+
+      {!loading && !error && displayedTasks.length === 0 ? (
         <Text>No tasks available</Text>
       ) : null}
 
@@ -276,13 +265,11 @@ const HomeScreen = ({ onLogout }: HomeScreenProps) => {
         renderItem={renderTask}
         style={styles.taskList}
         contentContainerStyle={styles.taskListContent}
-        onEndReachedThreshold={0.1}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
         }
       />
 
-      <Text style={styles.successMessage}>{successMessage}</Text>
       <View style={styles.logoutContainer}>
         <Button title="Logout" onPress={handleLogout} />
       </View>
@@ -323,6 +310,31 @@ const styles = StyleSheet.create({
     color: "red",
     marginBottom: 8,
   },
+  successMessage: {
+    color: "green",
+    marginBottom: 8,
+  },
+  filterSortContainer: {
+    marginVertical: 12,
+  },
+  filterSortLabel: {
+    fontSize: 16,
+    fontWeight: "bold",
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  filterSortButtons: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginBottom: 4,
+  },
+  filterSortButton: {
+    color: "blue",
+    textDecorationLine: "underline",
+    marginRight: 12,
+    marginBottom: 4,
+  },
   taskList: {
     flex: 1,
     marginTop: 12,
@@ -348,17 +360,16 @@ const styles = StyleSheet.create({
   },
   buttonRow: {
     flexDirection: "row",
+    alignItems: "center",
     gap: 8,
-  },
-  logoutContainer: {
-    marginTop: 12,
   },
   taskDeleteButton: {
     color: "red",
     fontSize: 16,
-    marginTop: 8,
     textDecorationLine: "underline",
-    cursor: "pointer",
+  },
+  logoutContainer: {
+    marginTop: 12,
   },
 });
 
