@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import {
   Button,
   FlatList,
+  RefreshControl,
   StyleSheet,
   Text,
   TextInput,
@@ -30,6 +31,17 @@ const HomeScreen = ({ onLogout }: HomeScreenProps) => {
   const [editingTaskId, setEditingTaskId] = useState<number | null>(null);
   const [editedTitle, setEditedTitle] = useState("");
 
+  const [filter, setFilter] = useState<string | null>(null);
+  const [sort, setSort] = useState<string | null>(null);
+
+  const handleFilter = (filter: string | null) => {
+    setFilter(filter);
+  };
+
+  const handleSort = (sort: string | null) => {
+    setSort(sort);
+  };
+
   useEffect(() => {
     fetchTasks();
   }, []);
@@ -56,6 +68,38 @@ const HomeScreen = ({ onLogout }: HomeScreenProps) => {
     await LoginService.removeToken();
     await onLogout();
   };
+
+  const [refreshing, setRefreshing] = useState(false);
+
+  const handleRefresh = () => {
+    setRefreshing(true);
+    // Perform your refresh logic here
+    // ...
+    setRefreshing(false);
+  };
+
+  const filteredTasks = filter
+    ? tasks.filter((task) => {
+        if (filter === "open") {
+          return !task.completed;
+        } else if (filter === "completed") {
+          return task.completed;
+        }
+        return true;
+      })
+    : tasks;
+
+  const sortedTasks = sort
+    ? filteredTasks.slice().sort((a, b) => {
+        if (sort === "asc") {
+          return a.title.localeCompare(b.title);
+        } else {
+          return b.title.localeCompare(a.title);
+        }
+      })
+    : filteredTasks;
+
+  const displayedTasks = filter || sort ? sortedTasks : tasks;
 
   const handleCreateTask = () => {
     const trimmedTitle = title.trim();
@@ -181,6 +225,34 @@ const HomeScreen = ({ onLogout }: HomeScreenProps) => {
         />
       </View>
 
+      <View style={styles.filterSortContainer}>
+        <View style={styles.filterSortRow}>
+          <Text style={styles.filterSortLabel}>Filter:</Text>
+          <View style={styles.filterSortButtons}>
+            <TouchableOpacity onPress={() => handleFilter("open")}>
+              <Text style={styles.filterSortButton}>Open</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => handleFilter("completed")}>
+              <Text style={styles.filterSortButton}>Completed</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => handleFilter(null)}>
+              <Text style={styles.filterSortButton}>All</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+        <View style={styles.filterSortRow}>
+          <Text style={styles.filterSortLabel}>Sort by:</Text>
+          <View style={styles.filterSortButtons}>
+            <TouchableOpacity onPress={() => handleSort("asc")}>
+              <Text style={styles.filterSortButton}>Title (asc)</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => handleSort("desc")}>
+              <Text style={styles.filterSortButton}>Title (desc)</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+
       {validationError ? (
         <Text style={styles.validationError}>{validationError}</Text>
       ) : null}
@@ -194,11 +266,15 @@ const HomeScreen = ({ onLogout }: HomeScreenProps) => {
       ) : null}
 
       <FlatList
-        data={tasks}
+        data={displayedTasks}
         keyExtractor={(item) => item.id.toString()}
         renderItem={renderTask}
         style={styles.taskList}
         contentContainerStyle={styles.taskListContent}
+        onEndReachedThreshold={0.1}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
+        }
       />
 
       <Text style={styles.successMessage}>{successMessage}</Text>

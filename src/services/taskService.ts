@@ -20,6 +20,24 @@ export const loadTasks = async (): Promise<Task[]> => {
   }));
 };
 
+export const filterTasks = (tasks: Task[], filter: string | null): Task[] => {
+  if (filter === "open") {
+    return tasks.filter((task) => !task.completed);
+  } else if (filter === "completed") {
+    return tasks.filter((task) => task.completed);
+  }
+  return tasks;
+};
+
+export const sortTasks = (tasks: Task[], sort: string | null): Task[] => {
+  if (sort === "asc") {
+    return tasks.slice().sort((a, b) => a.title.localeCompare(b.title));
+  } else if (sort === "desc") {
+    return tasks.slice().sort((a, b) => b.title.localeCompare(a.title));
+  }
+  return tasks;
+};
+
 export const createTask = (title: string): Task => {
   return {
     id: Date.now(),
