@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import {
+  ActivityIndicator,
   Button,
   FlatList,
   RefreshControl,
@@ -32,7 +33,6 @@ const HomeScreen = ({ onLogout }: HomeScreenProps) => {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   const [title, setTitle] = useState("");
@@ -43,6 +43,11 @@ const HomeScreen = ({ onLogout }: HomeScreenProps) => {
 
   const [filter, setFilter] = useState<TaskFilter>("all");
   const [sortOrder, setSortOrder] = useState<SortOrder>("none");
+
+  const [isCreating, setIsCreating] = useState(false);
+  const [isUpdating, setIsUpdating] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
     fetchTasks();
@@ -84,22 +89,28 @@ const HomeScreen = ({ onLogout }: HomeScreenProps) => {
   };
 
   const handleCreateTask = async () => {
-    const trimmedTitle = title.trim();
+    setError(null);
+    setSuccessMessage(null);
 
-    if (trimmedTitle.length < 3) {
-      setValidationError("Title must have at least 3 characters.");
+    if (title.length < 3) {
+      setError("Title must have at least 3 characters.");
       return;
     }
 
-    const newTask = createTask(trimmedTitle);
-    const updatedTasks = [newTask, ...tasks];
-
-    setTasks(updatedTasks);
-    await saveTasksToCache(updatedTasks);
-
-    setTitle("");
-    setValidationError(null);
-    setSuccessMessage("Task created.");
+    setIsCreating(true);
+    try {
+      const newTask = createTask(title.trim());
+      const updatedTasks = [...tasks, newTask];
+      await saveTasksToCache(updatedTasks);
+      setTasks(updatedTasks);
+      setTitle("");
+      setSuccessMessage("Task created.");
+    } catch (error) {
+      console.error("Error creating task", error);
+      setError("Error creating task.");
+    } finally {
+      setIsCreating(false);
+    }
   };
 
   const startEditing = (task: Task) => {
@@ -114,48 +125,66 @@ const HomeScreen = ({ onLogout }: HomeScreenProps) => {
     setValidationError(null);
   };
 
-  const saveEditedTask = async (task: Task) => {
-    const trimmedTitle = editedTitle.trim();
+  const saveEditedTask = async (taskId: number) => {
+    setError(null);
+    setSuccessMessage(null);
 
-    if (trimmedTitle.length < 3) {
+    if (editedTitle.length < 3) {
       setValidationError("Edited title must have at least 3 characters.");
       return;
     }
 
-    await updateTask(task.id, trimmedTitle);
-
-    const updatedTasks = tasks.map((currentTask) =>
-      currentTask.id === task.id
-        ? { ...currentTask, title: trimmedTitle }
-        : currentTask,
-    );
-
-    setTasks(updatedTasks);
-    await saveTasksToCache(updatedTasks);
-
-    setEditingTaskId(null);
-    setEditedTitle("");
-    setValidationError(null);
-    setSuccessMessage("Task updated.");
+    setIsUpdating(true);
+    try {
+      const trimmedTitle = editedTitle.trim();
+      await updateTask(taskId, trimmedTitle);
+      const updatedTasks = tasks.map((task) =>
+        task.id === taskId ? { ...task, title: trimmedTitle } : task,
+      );
+      setTasks(updatedTasks);
+      setEditingTaskId(null);
+      setEditedTitle("");
+      setValidationError(null);
+      setSuccessMessage("Task updated.");
+    } catch (error) {
+      console.error("Error updating task", error);
+      setError("Error updating task.");
+    } finally {
+      setIsUpdating(false);
+    }
   };
 
-  const handleDeleteTask = async (taskId: number) => {
-    setLoading(true);
+  const handleUpdateTask = async (taskId: number, title: string) => {
+    setIsUpdating(true);
     setError(null);
 
     try {
+      await updateTask(taskId, title);
+      setSuccessMessage("Task updated.");
+      setIsUpdating(false);
+      await loadTasks();
+    } catch (error) {
+      console.error("Error updating task", error);
+      setError("Error updating task.");
+      setIsUpdating(false);
+    }
+  };
+
+  const handleDeleteTask = async (taskId: number) => {
+    setError(null);
+    setSuccessMessage(null);
+
+    setIsDeleting(true);
+    try {
       await deleteTask(taskId);
-
       const updatedTasks = tasks.filter((task) => task.id !== taskId);
-
       setTasks(updatedTasks);
-      await saveTasksToCache(updatedTasks);
       setSuccessMessage("Task deleted.");
-    } catch (deleteError) {
-      console.error("Error deleting task", deleteError);
+    } catch (error) {
+      console.error("Error deleting task", error);
       setError("Error deleting task.");
     } finally {
-      setLoading(false);
+      setIsDeleting(false);
     }
   };
 
@@ -186,10 +215,24 @@ const HomeScreen = ({ onLogout }: HomeScreenProps) => {
               {item.completed ? "Done" : "Open"}
             </Text>
             <View style={styles.buttonRow}>
-              <Button title="Edit" onPress={() => startEditing(item)} />
-              <TouchableOpacity onPress={() => handleDeleteTask(item.id)}>
-                <Text style={styles.taskDeleteButton}>Delete</Text>
-              </TouchableOpacity>
+              <Button
+                title="Edit"
+                onPress={() => startEditing(item)}
+                disabled={isUpdating || editingTaskId === item.id}
+              >
+                {isUpdating && editingTaskId === item.id ? (
+                  <ActivityIndicator />
+                ) : null}
+              </Button>
+              <Button
+                title="Delete"
+                onPress={() => handleDeleteTask(item.id)}
+                disabled={isDeleting || editingTaskId === item.id}
+              >
+                {isDeleting && editingTaskId === item.id ? (
+                  <ActivityIndicator />
+                ) : null}
+              </Button>
             </View>
           </>
         )}
@@ -209,10 +252,12 @@ const HomeScreen = ({ onLogout }: HomeScreenProps) => {
           placeholder="Task title"
         />
         <Button
-          title="Add task"
-          onPress={handleCreateTask}
-          disabled={loading}
-        />
+          title="Create Task"
+          onPress={() => handleCreateTask(title)}
+          disabled={isCreating}
+        >
+          {isCreating ? <ActivityIndicator /> : null}
+        </Button>
       </View>
 
       <View style={styles.filterSortContainer}>
